@@ -1,0 +1,6 @@
+{"name":"Test Name",
+ "Column": "Some value",
+ "NestedDict":{"key1":1, "key2":{"duration":101, "correct":1}},
+ "NestedList":[{"tricky_dict":{"k":1,"z":22}},"def"]
+}
+
