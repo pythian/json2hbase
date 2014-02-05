@@ -9,6 +9,7 @@ from hbase import Hbase
 import json
 import argparse
 import os
+import struct
 
 TOP_LEVEL_CF = 'X'
 CONFIG_FILE = './conf/json2hbase-config.json';
@@ -28,6 +29,25 @@ class Json2Hbase(object):
 
     def _is_dict(self, json_obj):
         return type(json_obj) == dict
+
+    def _is_int(self, json_obj):
+        return type(json_obj) == int
+
+    def _is_float(self, json_obj):
+        return type(json_obj) == float
+
+    def _is_bool(self, json_obj):
+        return type(json_obj) == bool
+
+    def _encode(self, n):
+        if self._is_int(n):
+            return struct.pack("l", n)
+        elif self._is_float(n):
+            return struct.pack("f", n)
+        elif self._is_bool(n):
+            return struct.pack("?", n)
+        else:
+            return n
 
     def get_hbase_columns(self):
         return self._build_columns(self.json_obj)
@@ -65,7 +85,7 @@ class Json2Hbase(object):
                     yield t
                 i += 1
         else:
-            yield((cf, qualifier, json_obj))
+            yield((cf, qualifier, self._encode(json_obj)))
 
 
     def _open_connection(self):
@@ -99,6 +119,24 @@ class Json2Hbase(object):
     def load_data(self):
         self._open_connection()
         self._ensure_table()
+        mutations_batch = []
+
+        rowkey = ""
+        mutations = []
+        for c in self.get_hbase_columns():
+            print c
+            qualifier = c[1]
+            value = c[2]
+
+            if qualifier == self.top_level_cf + ":_id":
+                rowkey = value
+                print "Adding rowkey [%s]" % (rowkey)
+            
+            mutations.append( Hbase.Mutation(column=qualifier, value=value) )
+    
+        mutations_batch.append( Hbase.BatchMutation(row=rowkey, mutations=mutations) )
+        self.hbase_client.mutateRows(self.table_name, mutations_batch, None)
+    
         self._close_connection()
 
 if __name__ == '__main__':
@@ -130,8 +168,7 @@ if __name__ == '__main__':
     # load data file
 
     json_dict = json.load(open(options.path, 'r'))
-    #for i in Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).get_hbase_columns():
-    for i in Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).get_hbase_column_families():
-        print i
+#    for i in Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).get_hbase_column_families():
+#        print i
     Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).load_data()
 
