@@ -114,7 +114,12 @@ class Json2Hbase(object):
         tables = self.hbase_client.getTableNames()
         # if table does not exist, create it
         if not self.table_name in tables:
-            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), list(self.get_hbase_column_families()))
+            # add fixed CF for audio content
+            cfNames = list(self.get_hbase_column_families())
+            cfNames.append('AUDIO')
+            # transform into list of HBase columns
+            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), cfNames)
+            # create table
             self.hbase_client.createTable(self.table_name, cfs)
         # if table exists, verifies if it contains all the column families
         else:
@@ -134,7 +139,6 @@ class Json2Hbase(object):
         rowkey = ""
         mutations = []
         for c in self.get_hbase_columns():
-            print c
             qualifier = c[1]
             value = c[2]
 

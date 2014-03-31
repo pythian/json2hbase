@@ -1,7 +1,6 @@
 {
   "pythian-cluster": {
     "host": "d2.hadoop.cto.pythian.com",
-    "port": "9090",
-    "batchSize": "1000"
+    "port": "9090"
   }
 }
