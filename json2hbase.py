@@ -6,23 +6,21 @@ from thrift.transport import TSocket
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TTransport
 from hbase import Hbase
+from datetime import datetime
 import json
+import logging
 import argparse
 import os
-import pickle
 import struct
 
-TOP_LEVEL_CF = 'X'
-CONFIG_FILE = './conf/json2hbase-config.json';
 
 class Json2Hbase(object):
-
-    def __init__(self, site_config, table_name, top_level_cf, obj_as_cf, pack_arrays, json_obj):
+    
+    def __init__(self, site_config, table_name, top_level_cf, json_obj):
+        logging.error(json_obj)
         self.json_obj = json_obj
         self.table_name = table_name
         self.top_level_cf = top_level_cf
-        self.obj_as_cf = obj_as_cf
-        self.pack_arrays = pack_arrays
         self.hbase_host = site_config['host']
         self.hbase_port = int(site_config['port'])
         self.batch_size = int(site_config['batchSize'])
@@ -42,22 +40,23 @@ class Json2Hbase(object):
     def _is_bool(self, json_obj):
         return type(json_obj) == bool
 
+    def _is_datetime(self, json_obj):
+        return type(json_obj) == datetime
+
     def _encode(self, n):
         if self._is_int(n):
-            return struct.pack("l", n)
+            return str(n)
+            #return struct.pack("l", n)
         elif self._is_float(n):
-            return struct.pack("f", n)
+            return str(n)
+            #return struct.pack("f", n)
         elif self._is_bool(n):
-            return struct.pack("?", n)
-        elif self._is_list(n):
-            if self.pack_arrays == 'pickle':
-                return pickle.dumps(n, 2)
-            elif self.pack_arrays == 'json':
-                return json.dumps(n)
-            else:
-                raise Exception('Invalid packing option (%s). Valid values are: json, pickle' % (self.pack_arrays) )
+            return str(n)
+            #return struct.pack("?", n)
+        elif self._is_datetime(n):
+            return str(n)
         else:
-            return n
+            return n.encode('utf-8')
 
     def get_hbase_columns(self):
         return self._build_columns(self.json_obj)
@@ -73,7 +72,7 @@ class Json2Hbase(object):
         if self._is_dict(json_obj):
             for key in json_obj:
                 if level == 0:
-                    if self.obj_as_cf and (self._is_list(json_obj[key]) or self._is_dict(json_obj[key])):
+                    if self._is_list(json_obj[key]) or self._is_dict(json_obj[key]):
                         new_cf = key
                         new_qualifier = '%s:' % key
                     else:
@@ -87,7 +86,7 @@ class Json2Hbase(object):
                         new_qualifier = '%s.%s' % (qualifier, key)
                 for t in self._build_columns(json_obj[key], level+1, new_cf, new_qualifier):
                     yield t
-        elif self.pack_arrays == 'unpacked' and self._is_list(json_obj):
+        elif self._is_list(json_obj):
             i = 1
             for item in json_obj:
                 new_qualifier = '%s%d' % (qualifier, i)
@@ -114,12 +113,7 @@ class Json2Hbase(object):
         tables = self.hbase_client.getTableNames()
         # if table does not exist, create it
         if not self.table_name in tables:
-            # add fixed CF for audio content
-            cfNames = list(self.get_hbase_column_families())
-            cfNames.append('AUDIO')
-            # transform into list of HBase columns
-            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), cfNames)
-            # create table
+            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), list(self.get_hbase_column_families()))
             self.hbase_client.createTable(self.table_name, cfs)
         # if table exists, verifies if it contains all the column families
         else:
@@ -144,13 +138,13 @@ class Json2Hbase(object):
 
             if qualifier == self.top_level_cf + ":_id":
                 rowkey = value
-                print "Adding rowkey [%s]" % (rowkey)
+                logging.info("Adding rowkey [%s]" % (rowkey))
             
             mutations.append( Hbase.Mutation(column=qualifier, value=value) )
     
         mutations_batch.append( Hbase.BatchMutation(row=rowkey, mutations=mutations) )
         self.hbase_client.mutateRows(self.table_name, mutations_batch, None)
-    
+
         self._close_connection()
 
 if __name__ == '__main__':
@@ -164,10 +158,6 @@ if __name__ == '__main__':
                         help='Name of the site for which to run the load', required=True)
     parser.add_argument('--table-name', dest='table_name', \
                         help='Name of the table that will receive the data', required=True)
-    parser.add_argument('--top-level-obj-as-cf', dest='obj_as_cf', \
-                        action='store_true', help='Create top level dictionaries and lists as column families')
-    parser.add_argument('--pack-arrays', dest='pack_arrays', \
-                        default='unpacked', help='Store arrays as an encoded JSON object (json) or binary-pickled one (pickle), instead of unfolding its contents')
     options = parser.parse_args()
 
     # load config file
@@ -186,7 +176,7 @@ if __name__ == '__main__':
     # load data file
 
     json_dict = json.load(open(options.path, 'r'))
-#    for i in Json2Hbase(site_config, options.table_name, options.top_level_cf, options.obj_as_cf, options.pack_arrays, json_dict).get_hbase_column_families():
+#    for i in Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).get_hbase_column_families():
 #        print i
-    Json2Hbase(site_config, options.table_name, options.top_level_cf, options.obj_as_cf, options.pack_arrays, json_dict).load_data()
+    Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).load_data()
 
