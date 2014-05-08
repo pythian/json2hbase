@@ -16,14 +16,14 @@ import struct
 
 class Json2Hbase(object):
     
-    def __init__(self, site_config, table_name, top_level_cf, json_obj):
-        logging.error(json_obj)
-        self.json_obj = json_obj
+    def __init__(self, site_config, table_name, top_level_cf):
         self.table_name = table_name
         self.top_level_cf = top_level_cf
         self.hbase_host = site_config['host']
         self.hbase_port = int(site_config['port'])
         self.batch_size = int(site_config['batchSize'])
+        self.mutation_batch = []
+        self.mutations = 0
 
     def _is_list(self, json_obj):
         return type(json_obj) == list
@@ -58,12 +58,12 @@ class Json2Hbase(object):
         else:
             return n.encode('utf-8')
 
-    def get_hbase_columns(self):
-        return self._build_columns(self.json_obj)
+    def get_hbase_columns(self, data):
+        return self._build_columns(data)
 
-    def get_hbase_column_families(self):
+    def get_hbase_column_families(self, data):
         cfs = set()
-        for c in self.get_hbase_columns():
+        for c in self.get_hbase_columns(data):
            cfs.add(c[0])
         for cf in cfs:
            yield cf
@@ -72,12 +72,8 @@ class Json2Hbase(object):
         if self._is_dict(json_obj):
             for key in json_obj:
                 if level == 0:
-                    if self._is_list(json_obj[key]) or self._is_dict(json_obj[key]):
-                        new_cf = key
-                        new_qualifier = '%s:' % key
-                    else:
-                        new_cf = self.top_level_cf
-                        new_qualifier = '%s:%s' % (self.top_level_cf, key)
+                    new_cf = self.top_level_cf
+                    new_qualifier = '%s:%s' % (self.top_level_cf, key)
                 else:
                     new_cf = cf
                     if qualifier[-1] == ':':
@@ -97,7 +93,7 @@ class Json2Hbase(object):
             yield((cf, qualifier, self._encode(json_obj)))
 
 
-    def _open_connection(self):
+    def open_connection(self):
         # Connect to HBase Thrift server
         self.thrift_transport = TTransport.TBufferedTransport(TSocket.TSocket(self.hbase_host, self.hbase_port))
         self.thrift_protocol = TBinaryProtocol.TBinaryProtocolAccelerated(self.thrift_transport)
@@ -106,46 +102,51 @@ class Json2Hbase(object):
         self.hbase_client = Hbase.Client(self.thrift_protocol)
         self.thrift_transport.open()
 
-    def _close_connection(self):
+    def _apply_mutations(self):
+        logging.error("Mutating %s records"%self.mutations)
+        self.hbase_client.mutateRows(self.table_name, self.mutation_batch, None)
+        self.mutations=0
+        self.mutations_batch=[]
+
+    def close_connection(self):
+        if self.mutations > 0:
+            self._apply_mutations()
         self.thrift_transport.close()
 
-    def _ensure_table(self):
+    def _ensure_table(self, data):
         tables = self.hbase_client.getTableNames()
         # if table does not exist, create it
         if not self.table_name in tables:
-            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), list(self.get_hbase_column_families()))
+            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), list(self.get_hbase_column_families(data)))
             self.hbase_client.createTable(self.table_name, cfs)
         # if table exists, verifies if it contains all the column families
         else:
             table_cfs = map(lambda x: x[:-1], self.hbase_client.getColumnDescriptors(self.table_name))
             missing_cfs = []
-            for cf in self.get_hbase_column_families():
+            for cf in self.get_hbase_column_families(data):
                 if not cf in table_cfs:
                     missing_cfs.append(cf)
             if len(missing_cfs) > 0:
                 raise Exception("The table already exists but does not contain these column familie: %s" % (missing_cfs))
 
-    def load_data(self):
-        self._open_connection()
-        self._ensure_table()
-        mutations_batch = []
 
+    def load_data(self, data):
         rowkey = ""
         mutations = []
-        for c in self.get_hbase_columns():
+        for c in self.get_hbase_columns(data):
             qualifier = c[1]
             value = c[2]
 
             if qualifier == self.top_level_cf + ":_id":
                 rowkey = value
-                logging.info("Adding rowkey [%s]" % (rowkey))
             
             mutations.append( Hbase.Mutation(column=qualifier, value=value) )
-    
-        mutations_batch.append( Hbase.BatchMutation(row=rowkey, mutations=mutations) )
-        self.hbase_client.mutateRows(self.table_name, mutations_batch, None)
-
-        self._close_connection()
+   
+        self.mutation_batch.append( Hbase.BatchMutation(row=rowkey, mutations=mutations) )
+        self.mutations +=1
+        if self.mutations > self.batch_size: 
+            self._ensure_table(data)
+            self._apply_mutations()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Imports JSON into HBase')
