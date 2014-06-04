@@ -1,2 +1,8 @@
+## Release 0.2
+* Hbase load use batching for improved performance.
+* All metadata is added to a single column family.
+* New script to load audio files.
+* Lists are loaded to a single KeyValue in Hbase as a JSON string.
+
 ## Release 0.1
 * Intial release. Can populate Hbase table based on JSON document.
