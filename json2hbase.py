@@ -107,7 +107,11 @@ class Json2Hbase(object):
         # if table does not exist, create it
         if not self.table_name in tables:
             logging.debug("Creating table %s" % (self.table_name))
-            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), list(self.get_hbase_column_families(data)))
+            # add fixed CF for audio content
+            cfNames = list(self.get_hbase_column_families(data))
+            cfNames.append('AUDIO')
+            # transform into list of HBase columns
+            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), cfNames)
             self.hbase_client.createTable(self.table_name, cfs)
         # if table exists, verifies if it contains all the column families
         else:
