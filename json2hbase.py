@@ -13,17 +13,18 @@ import argparse
 import os
 import struct
 
+DEFAULT_TOP_LEVEL_CF = 'X'
+DEFAULT_CONFIG_FILE = './conf/json2hbase-config.json';
 
 class Json2Hbase(object):
     
     def __init__(self, site_config, table_name, top_level_cf, json_obj):
-        logging.error(json_obj)
+        logging.debug(json_obj)
         self.json_obj = json_obj
         self.table_name = table_name
         self.top_level_cf = top_level_cf
         self.hbase_host = site_config['host']
         self.hbase_port = int(site_config['port'])
-        self.batch_size = int(site_config['batchSize'])
 
     def _is_list(self, json_obj):
         return type(json_obj) == list
@@ -44,17 +45,10 @@ class Json2Hbase(object):
         return type(json_obj) == datetime
 
     def _encode(self, n):
-        if self._is_int(n):
+        if self._is_int(n) or self._is_float(n) or self._is_bool(n) or self._is_datetime(n):
             return str(n)
-            #return struct.pack("l", n)
-        elif self._is_float(n):
-            return str(n)
-            #return struct.pack("f", n)
-        elif self._is_bool(n):
-            return str(n)
-            #return struct.pack("?", n)
-        elif self._is_datetime(n):
-            return str(n)
+        elif self._is_list(n):
+            return json.dumps(n)
         else:
             return n.encode('utf-8')
 
@@ -113,7 +107,12 @@ class Json2Hbase(object):
         tables = self.hbase_client.getTableNames()
         # if table does not exist, create it
         if not self.table_name in tables:
-            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), list(self.get_hbase_column_families()))
+            # add fixed CF for audio content
+            cfNames = list(self.get_hbase_column_families())
+            cfNames.append('AUDIO')
+            # transform into list of HBase columns
+            cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), cfNames)
+            # create table
             self.hbase_client.createTable(self.table_name, cfs)
         # if table exists, verifies if it contains all the column families
         else:
@@ -151,9 +150,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Imports JSON into HBase')
     parser.add_argument('path', help='path to json file')
     parser.add_argument('--top-level-cf', dest='top_level_cf', \
-                        default=TOP_LEVEL_CF, help='Name of the top level column family')
+                        default=DEFAULT_TOP_LEVEL_CF, help='Name of the top level column family')
     parser.add_argument('--config-file', dest='config_file', \
-                        default=CONFIG_FILE, help='Path to configuration file')
+                        default=DEFAULT_CONFIG_FILE, help='Path to configuration file')
     parser.add_argument('--site', dest='site', \
                         help='Name of the site for which to run the load', required=True)
     parser.add_argument('--table-name', dest='table_name', \
