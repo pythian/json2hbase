@@ -18,9 +18,10 @@ DEFAULT_CONFIG_FILE = './conf/json2hbase-config.json';
 
 class Json2Hbase(object):
     
-    def __init__(self, site_config, table_name, top_level_cf):
+    def __init__(self, site_config, table_name, top_level_cf, cf_mapping={}):
         self.table_name = table_name
         self.top_level_cf = top_level_cf
+        self.cf_mapping = cf_mapping
         self.hbase_host = site_config['host']
         self.hbase_port = int(site_config['port'])
         self.batch_size = int(site_config['batchSize'])
@@ -46,13 +47,18 @@ class Json2Hbase(object):
     def _is_datetime(self, json_obj):
         return type(json_obj) == datetime
 
+    def _is_unicode(self, json_obj):
+        return type(json_obj) == unicode
+
     def _encode(self, n):
         if self._is_int(n) or self._is_float(n) or self._is_bool(n) or self._is_datetime(n):
             return str(n)
         elif self._is_list(n):
             return json.dumps(n)
-        else:
+        elif self._is_unicode(n):
             return n.encode('utf-8')
+        else:
+            return n
 
     def get_hbase_columns(self, data):
         return self._build_columns(data)
@@ -68,15 +74,17 @@ class Json2Hbase(object):
         if self._is_dict(json_obj):
             for key in json_obj:
                 if level == 0:
-                    new_cf = self.top_level_cf
-                    new_qualifier = '%s:%s' % (self.top_level_cf, key)
+                    if key in self.cf_mapping:
+                        cf = self.cf_mapping[key]
+                    else:
+                        cf = self.top_level_cf
+                    new_qualifier = '%s:%s' % (cf, key)
                 else:
-                    new_cf = cf
                     if qualifier[-1] == ':':
                         new_qualifier = '%s%s' % (qualifier, key)
                     else:
                         new_qualifier = '%s.%s' % (qualifier, key)
-                for t in self._build_columns(json_obj[key], level+1, new_cf, new_qualifier):
+                for t in self._build_columns(json_obj[key], level+1, cf, new_qualifier):
                     yield t
         else:
             yield((cf, qualifier, self._encode(json_obj)))
