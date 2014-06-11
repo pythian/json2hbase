@@ -1,3 +1,8 @@
+## Release 1.0
+* First deployed release
+* More encoding fixes
+* More flexible column family mapping
+
 ## Release 0.2
 * Hbase load use batching for improved performance.
 * All metadata is added to a single column family.
