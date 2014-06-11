@@ -46,13 +46,18 @@ class Json2Hbase(object):
     def _is_datetime(self, json_obj):
         return type(json_obj) == datetime
 
+    def _is_unicode(self, json_obj):
+        return type(json_obj) == unicode
+
     def _encode(self, n):
         if self._is_int(n) or self._is_float(n) or self._is_bool(n) or self._is_datetime(n):
             return str(n)
         elif self._is_list(n):
             return json.dumps(n)
-        else:
+        elif self._is_unicode(n):
             return n.encode('utf-8')
+        else:
+            return n
 
     def get_hbase_columns(self, data):
         return self._build_columns(data)
