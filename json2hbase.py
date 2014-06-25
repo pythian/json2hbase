@@ -60,6 +60,10 @@ class Json2Hbase(object):
         else:
             return n
 
+    def add_cf_mappings(self, qualifiers, cf):
+        for qual in qualifiers:
+            self.cf_mapping[qual] = cf
+
     def get_hbase_columns(self, data):
         return self._build_columns(data)
 
