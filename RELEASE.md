@@ -1,3 +1,7 @@
+## Release 1.1
+* Add column-family mapping per column
+* Changed rowkey field name to '_rowkey'
+
 ## Release 1.0
 * First deployed release
 * More encoding fixes
