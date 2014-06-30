@@ -14,7 +14,8 @@ import os
 import struct
 
 DEFAULT_TOP_LEVEL_CF = 'X'
-DEFAULT_CONFIG_FILE = './conf/json2hbase-config.json';
+DEFAULT_CONFIG_FILE = './conf/json2hbase-config.json'
+ROWKEY_FIELD = '_rowkey'
 
 class Json2Hbase(object):
     
@@ -59,6 +60,10 @@ class Json2Hbase(object):
             return n.encode('utf-8')
         else:
             return n
+
+    def add_cf_mappings(self, qualifiers, cf):
+        for qual in qualifiers:
+            self.cf_mapping[qual] = cf
 
     def get_hbase_columns(self, data):
         return self._build_columns(data)
@@ -144,10 +149,10 @@ class Json2Hbase(object):
             qualifier = c[1]
             value = c[2]
 
-            if qualifier == self.top_level_cf + ":_id":
+            if qualifier == self.top_level_cf + ":" + ROWKEY_FIELD:
                 rowkey = value
-            
-            mutations.append( Hbase.Mutation(column=qualifier, value=value) )
+            else:
+                mutations.append( Hbase.Mutation(column=qualifier, value=value) )
    
         self.mutation_batch.append( Hbase.BatchMutation(row=rowkey, mutations=mutations) )
         self.mutations +=1
