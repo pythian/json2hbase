@@ -13,15 +13,16 @@ import argparse
 import os
 import struct
 
-DEFAULT_TOP_LEVEL_CF = 'X'
+DEFAULT_TOP_LEVEL_CF = 'data'
 DEFAULT_CONFIG_FILE = './conf/json2hbase-config.json'
 ROWKEY_FIELD = '_rowkey'
 
 class Json2Hbase(object):
     
-    def __init__(self, site_config, table_name, top_level_cf, cf_mapping={}):
+    def __init__(self, site_config, table_name, top_level_cf, additional_cfs, cf_mapping={}):
         self.table_name = table_name
         self.top_level_cf = top_level_cf
+        self.additional_cfs = additional_cfs
         self.cf_mapping = cf_mapping
         self.hbase_host = site_config['host']
         self.hbase_port = int(site_config['port'])
@@ -107,8 +108,9 @@ class Json2Hbase(object):
     def _apply_mutations(self):
         logging.debug("Mutating %s records"%self.mutations)
         self.hbase_client.mutateRows(self.table_name, self.mutation_batch, None)
-        self.mutations=0
-        self.mutations_batch=[]
+        self.mutations = 0
+        self.mutations_batch = []
+        self.cf_mappings = {}
 
     def close_connection(self):
         if self.mutations > 0:
@@ -122,7 +124,8 @@ class Json2Hbase(object):
             logging.debug("Creating table %s" % (self.table_name))
             # add fixed CF for audio content
             cfNames = list(self.get_hbase_column_families(data))
-            cfNames.append('AUDIO')
+            for cf_name in self.additional_cfs:
+                cfNames.append(cf_name)
             # transform into list of HBase columns
             cfs = map(lambda x: Hbase.ColumnDescriptor(name=x), cfNames)
             self.hbase_client.createTable(self.table_name, cfs)
@@ -164,6 +167,8 @@ if __name__ == '__main__':
     parser.add_argument('path', help='path to json file')
     parser.add_argument('--top-level-cf', dest='top_level_cf', \
                         default=DEFAULT_TOP_LEVEL_CF, help='Name of the top level column family')
+    parser.add_argument('--additional-cfs', dest='additional_cfs', \
+                        default=None, help='Comma-separated of column families to be added to the table upon creation')
     parser.add_argument('--config-file', dest='config_file', \
                         default=DEFAULT_CONFIG_FILE, help='Path to configuration file')
     parser.add_argument('--site', dest='site', \
@@ -171,6 +176,11 @@ if __name__ == '__main__':
     parser.add_argument('--table-name', dest='table_name', \
                         help='Name of the table that will receive the data', required=True)
     options = parser.parse_args()
+
+    if additional_cfs == None:
+        additional_cfs = []
+    else:
+        additional_cfs = options.additional_cfs.split(',')
 
     # load config file
 
@@ -190,7 +200,7 @@ if __name__ == '__main__':
     json_dict = json.load(open(options.path, 'r'))
 #    for i in Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).get_hbase_column_families():
 #        print i
-    loader = Json2Hbase(site_config, options.table_name, options.top_level_cf)
+    loader = Json2Hbase(site_config, options.table_name, options.top_level_cf, additional_cfs)
     loader.open_connection()
     loader.load_data(json_dict)
     loader.close_connection()

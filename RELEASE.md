@@ -1,3 +1,6 @@
+## Release 1.2
+* Allows more flexible CF specification.
+
 ## Release 1.1
 * Add column-family mapping per column
 * Changed rowkey field name to '_rowkey'
