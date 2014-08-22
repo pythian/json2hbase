@@ -1,3 +1,6 @@
+## Release 1.3
+* Reviewed and improved the AudioLoader class
+
 ## Release 1.2
 * Allows more flexible CF specification.
 
