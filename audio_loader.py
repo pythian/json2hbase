@@ -3,6 +3,7 @@
 import argparse
 import fnmatch
 import json
+import logging
 import os
 import re
 import sys
@@ -19,16 +20,21 @@ DEFAULT_PATTERN = '*'
 DEFAULT_BATCH_SIZE = 1000
 DEFAULT_WORKERS = 1
 
+# logging facility
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+LOG = logging.getLogger('audio_loader')
+
 class AudioLoader(object):
 
-    def __init__(self, options, site_config):
-        self.path = options.path
-        self.pattern = options.pattern
-        self.table_name = options.table_name
-        self.audio_cf = options.audio_cf
-        self.batch_size = int(options.batch_size)
-        self.workers = int(options.workers)
-        self.site_config = site_config
+    def __init__(self, path, pattern, table_name, audio_cf, batch_size, workers, host, port):
+        self.path = path
+        self.pattern = pattern
+        self.table_name = table_name
+        self.audio_cf = audio_cf
+        self.batch_size = batch_size
+        self.workers = workers
+        self.host = host
+        self.port = port
 
         self.queue = Queue()
 
@@ -37,7 +43,7 @@ class AudioLoader(object):
                     
     def _open_connection(self, worker_id):
         # Connect to HBase Thrift server
-        self.thrift_transport[worker_id] = TTransport.TBufferedTransport(TSocket.TSocket(self.site_config['host'], int(self.site_config['port'])))
+        self.thrift_transport[worker_id] = TTransport.TBufferedTransport(TSocket.TSocket(self.host, self.port))
 
         # Create and open the client connection
         thrift_protocol = TBinaryProtocol.TBinaryProtocolAccelerated(self.thrift_transport[worker_id])
@@ -54,11 +60,17 @@ class AudioLoader(object):
         rowkey = re.sub('\.[^.]*$', '', basename)
         qualifier = '%s:.' % (self.audio_cf)
         audio_file = open(file_path, 'r')
-        batch.append( Hbase.BatchMutation(row=rowkey, mutations=[ Hbase.Mutation(column=qualifier, value=audio_file.read()) ]) )
+        audio_content = audio_file.read()
+        if len(audio_content) <= 0:
+            LOG.info('FILE: %s, ROWKEY: %s, QUAL: %s, AUDIO_LEN: %d' % (file_path, rowkey, qualifier, len(audio_content)))
+        batch.append( Hbase.BatchMutation(row=rowkey, mutations=[ Hbase.Mutation(column=qualifier, value=audio_content) ]) )
         audio_file.close()
 
         if len(batch) >= self.batch_size:
-            self._flush_files(batch, hbclient)
+            try:
+                self._flush_files(batch, hbclient)
+            except:
+                LOG.error('FILE:'+file)
 
     def _flush_files(self, batch, hbclient):
         hbclient.mutateRows(self.table_name, batch, None)
@@ -86,7 +98,7 @@ class AudioLoader(object):
         self._flush_files(local_mutations_batch, hbclient)
 
         self._close_connection(worker_id)
-        print "Worker #%s processed %d files" % (worker_id, files)
+        LOG.info("Worker #%s processed %d files" % (worker_id, files))
 
     def load_data(self):
 
@@ -100,7 +112,7 @@ class AudioLoader(object):
         while self.queue.qsize() > 0:
             if self.queue.qsize() != queue_size:
                 queue_size = self.queue.qsize()
-                print "Queue size: %d" % (queue_size)
+                LOG.info("Queue size: %d" % (queue_size))
             time.sleep(1)
 
         map(lambda w: w.join(), workers)
@@ -129,10 +141,17 @@ if __name__ == '__main__':
             raise Exception('\nThe configuration file %s doesn\'t contain configuration for site [%s]'\
                             % (options.config_file, options.site) +\
                             '\nAvailable site configurations: %s' % (', '.join(config)))
-        else:
-            site_config = config[options.site]
 
     # load data file
 
-    AudioLoader(options, site_config).load_data()
+    AudioLoader(
+        options.path,
+        options.pattern,
+        options.table_name,
+        options.audio_cf,
+        int(options.batch_size),
+        int(options.workers),
+        options.site['host'],
+        int(options.site['port'])
+        ).load_data()
 

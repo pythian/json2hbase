@@ -2,6 +2,7 @@
 
 """ Imports JSON into HBase """
 
+from __future__ import print_function
 from thrift.transport import TSocket
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TTransport
@@ -12,6 +13,7 @@ import logging
 import argparse
 import os
 import struct
+import sys
 
 DEFAULT_TOP_LEVEL_CF = 'data'
 DEFAULT_CONFIG_FILE = './conf/json2hbase-config.json'
@@ -19,16 +21,16 @@ ROWKEY_FIELD = '_rowkey'
 
 class Json2Hbase(object):
     
-    def __init__(self, site_config, table_name, top_level_cf, additional_cfs, cf_mapping={}):
+    def __init__(self, host, port, batch_size, table_name, top_level_cf, additional_cfs, cf_mapping={}):
         self.table_name = table_name
         self.top_level_cf = top_level_cf
         self.additional_cfs = additional_cfs
         self.cf_mapping = cf_mapping
-        self.hbase_host = site_config['host']
-        self.hbase_port = int(site_config['port'])
-        self.batch_size = int(site_config['batchSize'])
+        self.hbase_host = host
+        self.hbase_port = port
+        self.batch_size = batch_size
         self.mutation_batch = []
-        self.mutations = 0
+        #self.mutation_batch_debug = ''
         self.table_exists = False
 
     def _is_list(self, json_obj):
@@ -106,14 +108,18 @@ class Json2Hbase(object):
         self.thrift_transport.open()
 
     def _apply_mutations(self):
-        logging.debug("Mutating %s records"%self.mutations)
+        #logging.debug("Mutating %s records" % len(self.mutation_batch))
+        print("Mutating %s records" % len(self.mutation_batch), file=sys.stderr)
         self.hbase_client.mutateRows(self.table_name, self.mutation_batch, None)
-        self.mutations = 0
-        self.mutations_batch = []
-        self.cf_mappings = {}
+        self.mutation_batch = []
+        #self.mutation_batch_debug = ''
+        self.cf_mapping = {}
+
+        # FOR DEBUGGING:
+        #self.batch_size = 1000
 
     def close_connection(self):
-        if self.mutations > 0:
+        if len(self.mutation_batch) > 0:
             self._apply_mutations()
         self.thrift_transport.close()
 
@@ -148,19 +154,26 @@ class Json2Hbase(object):
 
         rowkey = ""
         mutations = []
+        #mutations_debug = ''
         for c in self.get_hbase_columns(data):
             qualifier = c[1]
             value = c[2]
 
             if qualifier == self.top_level_cf + ":" + ROWKEY_FIELD:
                 rowkey = value
+                #if self.batch_size <= 1000:
+                    #mutations_debug = '<ROWKEY>' + value + mutations_debug
             else:
                 mutations.append( Hbase.Mutation(column=qualifier, value=value) )
+                #if self.batch_size <= 1000:
+                    #mutations_debug = mutations_debug + '<QUAL>' + qualifier + '<VALUE>' + str(value)
    
-        self.mutation_batch.append( Hbase.BatchMutation(row=rowkey, mutations=mutations) )
-        self.mutations +=1
-        if self.mutations > self.batch_size: 
-            self._apply_mutations()
+        if len(mutations) > 0:
+            self.mutation_batch.append( Hbase.BatchMutation(row=rowkey, mutations=mutations) )
+            #if self.batch_size <= 1000:
+                #self.mutation_batch_debug = self.mutation_batch_debug + '<BATCH>' + mutations_debug
+            if len(self.mutation_batch) >= self.batch_size: 
+                self._apply_mutations()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Imports JSON into HBase')
@@ -198,9 +211,8 @@ if __name__ == '__main__':
     # load data file
 
     json_dict = json.load(open(options.path, 'r'))
-#    for i in Json2Hbase(site_config, options.table_name, options.top_level_cf, json_dict).get_hbase_column_families():
-#        print i
-    loader = Json2Hbase(site_config, options.table_name, options.top_level_cf, additional_cfs)
+    loader = Json2Hbase(site_config['host'], int(site_config['port']), int(site_config['batchSize']),
+        options.table_name, options.top_level_cf, additional_cfs)
     loader.open_connection()
     loader.load_data(json_dict)
     loader.close_connection()
