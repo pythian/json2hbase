@@ -3,5 +3,10 @@
     "host": "d2.hadoop.cto.pythian.com",
     "port": "9090",
     "batchSize": "1000"
+  },
+  "interactions": {
+    "host": "hdp-nn2.smv.ma.interactions.net",
+    "port": "9090",
+    "batchSize": "10"
   }
 }
