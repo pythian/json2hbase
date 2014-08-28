@@ -80,10 +80,10 @@ class AudioLoader(object):
         if os.path.isfile(path):
             yield path
         else:
-            for root, dir, files in os.walk(self.path):
-                filtered_file = fnmatch.filter(files, self.pattern)
-                for file in fnmatch.filter(files, self.pattern):
-                    yield os.path.join(root, file)
+            files = os.listdir(self.path)
+            filtered_file = fnmatch.filter(files, self.pattern)
+            for file in fnmatch.filter(files, self.pattern):
+                yield os.path.join(self.path, file)
 
     def _worker(self, worker_id):
         hbclient = self._open_connection(worker_id)
