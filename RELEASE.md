@@ -1,3 +1,6 @@
+## Release 1.4
+* Improved the way the audio loader lists and load files from disk.
+
 ## Release 1.3
 * Reviewed and improved the AudioLoader class
 
