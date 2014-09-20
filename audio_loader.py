@@ -73,7 +73,7 @@ class AudioLoader(object):
                 LOG.error('FILE:'+file)
 
     def _flush_files(self, batch, hbclient):
-        hbclient.mutateRows(self.table_name, batch, None)
+        #hbclient.mutateRows(self.table_name, batch, None)
         del batch[:]
 
     def _get_all_files(self, path):

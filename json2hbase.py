@@ -42,6 +42,9 @@ class Json2Hbase(object):
     def _is_int(self, json_obj):
         return type(json_obj) == int
 
+    def _is_long(self, json_obj):
+        return type(json_obj) == long
+
     def _is_float(self, json_obj):
         return type(json_obj) == float
 
@@ -55,7 +58,7 @@ class Json2Hbase(object):
         return type(json_obj) == unicode
 
     def _encode(self, n):
-        if self._is_int(n) or self._is_float(n) or self._is_bool(n) or self._is_datetime(n):
+        if self._is_int(n) or self._is_float(n) or self._is_bool(n) or self._is_datetime(n) or self._is_long(n):
             return str(n)
         elif self._is_list(n):
             return json.dumps(n)
